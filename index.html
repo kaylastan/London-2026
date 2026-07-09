@@ -12,8 +12,8 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/12.15.0/firebase-app-compat.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/12.15.0/firebase-firestore-compat.min.js"></script>
 <style>
   :root{
     --navy:#4B3480;
@@ -208,6 +208,62 @@
     border-color:var(--navy);
   }
   .check-pill input{display:none;}
+  .split-toggle{
+    display:flex;
+    gap:8px;
+    margin-bottom:10px;
+  }
+  .split-toggle-btn{
+    flex:1;
+    font-family:'Inter',sans-serif;
+    font-size:13px;
+    font-weight:500;
+    padding:8px 10px;
+    border-radius:8px;
+    border:1px solid var(--line);
+    background:var(--cream);
+    color:var(--muted);
+    cursor:pointer;
+  }
+  .split-toggle-btn.active{
+    background:var(--navy);
+    border-color:var(--navy);
+    color:var(--cream);
+  }
+  .custom-split-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    padding:7px 0;
+    border-bottom:1px solid var(--line);
+  }
+  .custom-split-row:last-of-type{
+    border-bottom:none;
+  }
+  .custom-split-row label{
+    font-size:13.5px;
+    color:var(--ink);
+    margin:0;
+  }
+  .custom-split-row input{
+    width:100px;
+    padding:6px 8px;
+    font-size:13.5px;
+    font-family:'IBM Plex Mono',monospace;
+    border:1px solid var(--line);
+    border-radius:7px;
+    background:#fff;
+    color:var(--ink);
+    text-align:right;
+  }
+  .custom-split-total{
+    font-size:12.5px;
+    margin-top:8px;
+    font-family:'IBM Plex Mono',monospace;
+  }
+  .custom-split-total.ok{ color:var(--teal-dark); }
+  .custom-split-total.off{ color:var(--coral-dark); }
   .row-actions{
     display:flex;
     gap:8px;
@@ -512,11 +568,19 @@
         <label>Who it affects</label>
         <div class="check-grid" id="affectsGrid"></div>
       </div>
+      <div class="field">
+        <label>How to split it</label>
+        <div class="split-toggle">
+          <button type="button" class="split-toggle-btn active" data-mode="even" id="evenBtn">Split evenly</button>
+          <button type="button" class="split-toggle-btn" data-mode="custom" id="customBtn">Custom amounts</button>
+        </div>
+        <div id="customSplitBox" style="display:none;"></div>
+      </div>
       <div class="row-actions">
         <button class="btn" id="addBtn">Add to ledger</button>
         <button class="btn secondary" id="clearBtn">Clear</button>
       </div>
-      <p class="hint">Splits evenly across whoever you select. Uncheck names for expenses that don't affect everyone.</p>
+      <p class="hint" id="splitHint">Splits evenly across whoever you select. Uncheck names for expenses that don't affect everyone.</p>
     </div>
   </div>
 
@@ -538,20 +602,29 @@ const NAMES = ["Kayla","Marian","Eve","Elias","Delali"];
 const PROFILE_KEY = "my-profile";
 let expenses = [];
 let myName = null;
+let splitMode = 'even';
+let customValues = {};
 
 // ---- Firebase setup ----
 // Paste your own project's config here (Firebase console > Project settings > Your apps > Config).
 // These values are safe to expose publicly — Firestore security rules control who can read/write.
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyA_onkMJZyNk3ABVC-kyQjxH6SaaHOmv4o",
+  authDomain: "london-2026-68de3.firebaseapp.com",
+  projectId: "london-2026-68de3",
+  storageBucket: "london-2026-68de3.firebasestorage.app",
+  messagingSenderId: "937859154617",
+  appId: "1:937859154617:web:56276f23243f102af75168",
+  measurementId: "G-DJNYX7RXRK"
 };
+if(typeof firebase === 'undefined'){
+  document.body.innerHTML = '<div style="padding:2rem;font-family:sans-serif;text-align:center;color:#8C2F49;">Couldn\'t load Firebase — check your internet connection or try disabling ad-blocking extensions, then reload the page.</div>';
+  throw new Error('Firebase SDK failed to load');
+}
+
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
+db.settings({ experimentalAutoDetectLongPolling: true, merge: true });
 const expensesRef = db.collection("trips").doc("london-2026").collection("expenses");
 
 function toast(msg){
@@ -620,6 +693,7 @@ function initTravelers(){
       const cb = pill.querySelector('input');
       cb.checked = !cb.checked;
       pill.classList.toggle('on', cb.checked);
+      renderCustomSplitBox();
     });
   });
 
@@ -628,6 +702,72 @@ function initTravelers(){
   profileGrid.querySelectorAll('.profile-option').forEach(btn => {
     btn.addEventListener('click', () => chooseProfile(btn.dataset.name));
   });
+
+  document.getElementById('evenBtn').addEventListener('click', () => setSplitMode('even'));
+  document.getElementById('customBtn').addEventListener('click', () => setSplitMode('custom'));
+  document.getElementById('amount').addEventListener('input', renderCustomSplitBox);
+}
+
+function setSplitMode(mode){
+  splitMode = mode;
+  document.getElementById('evenBtn').classList.toggle('active', mode === 'even');
+  document.getElementById('customBtn').classList.toggle('active', mode === 'custom');
+  document.getElementById('customSplitBox').style.display = mode === 'custom' ? 'block' : 'none';
+  document.getElementById('splitHint').textContent = mode === 'even'
+    ? 'Splits evenly across whoever you select. Uncheck names for expenses that don\'t affect everyone.'
+    : 'Enter what each person actually owes — handy when orders aren\'t the same price.';
+  if(mode === 'custom') renderCustomSplitBox();
+}
+
+function renderCustomSplitBox(){
+  if(splitMode !== 'custom') return;
+  const checked = Array.from(document.querySelectorAll('#affectsGrid input:checked')).map(cb => cb.value);
+  const amount = parseFloat(document.getElementById('amount').value) || 0;
+  const currency = document.getElementById('currency').value;
+  const box = document.getElementById('customSplitBox');
+
+  if(checked.length === 0){
+    box.innerHTML = `<p class="hint">Select who it affects first.</p>`;
+    return;
+  }
+
+  const evenShare = checked.length ? (amount / checked.length) : 0;
+  const rows = checked.map(n => {
+    const val = customValues[n] !== undefined ? customValues[n] : (evenShare ? evenShare.toFixed(2) : '');
+    return `
+      <div class="custom-split-row">
+        <label>${n}</label>
+        <input type="number" step="0.01" min="0" class="custom-amount-input" data-name="${n}" value="${val}">
+      </div>
+    `;
+  }).join('');
+
+  box.innerHTML = rows + `<p class="custom-split-total" id="customSplitTotal"></p>`;
+
+  box.querySelectorAll('.custom-amount-input').forEach(input => {
+    input.addEventListener('input', () => {
+      customValues[input.dataset.name] = input.value;
+      updateCustomSplitTotal();
+    });
+  });
+
+  updateCustomSplitTotal();
+
+  function updateCustomSplitTotal(){
+    const sum = checked.reduce((s, n) => s + (parseFloat(customValues[n]) || 0), 0);
+    const totalEl = document.getElementById('customSplitTotal');
+    if(!totalEl) return;
+    const diff = amount - sum;
+    if(Math.abs(diff) < 0.01){
+      totalEl.className = 'custom-split-total ok';
+      totalEl.textContent = `Assigned ${fmt(sum, currency)} of ${fmt(amount, currency)} — all set`;
+    } else {
+      totalEl.className = 'custom-split-total off';
+      totalEl.textContent = diff > 0
+        ? `Assigned ${fmt(sum, currency)} of ${fmt(amount, currency)} — ${fmt(diff, currency)} left to assign`
+        : `Assigned ${fmt(sum, currency)} of ${fmt(amount, currency)} — ${fmt(-diff, currency)} over`;
+    }
+  }
 }
 
 function loadExpenses(){
@@ -662,20 +802,48 @@ function addExpense(){
   if(!amount || amount <= 0){ toast('Add a valid amount'); return; }
   if(checked.length === 0){ toast('Select who it affects'); return; }
 
-  addExpenseToStore({
+  const expense = {
     desc, amount, currency, paidBy,
     splitAmong: checked,
+    splitType: splitMode,
     ts: Date.now()
-  });
+  };
+
+  if(splitMode === 'custom'){
+    const splitAmounts = {};
+    let sum = 0;
+    for(const n of checked){
+      const v = parseFloat(customValues[n]);
+      if(isNaN(v) || v < 0){ toast(`Enter a valid amount for ${n}`); return; }
+      splitAmounts[n] = v;
+      sum += v;
+    }
+    if(Math.abs(sum - amount) > 0.01){
+      toast(`Amounts add up to ${fmt(sum, currency)}, not ${fmt(amount, currency)}`);
+      return;
+    }
+    expense.splitAmounts = splitAmounts;
+  }
+
+  addExpenseToStore(expense);
 
   document.getElementById('desc').value = '';
   document.getElementById('amount').value = '';
   if(myName) document.getElementById('paidBy').value = myName;
+  customValues = {};
+  setSplitMode('even');
   toast('Added to ledger');
 }
 
 function deleteExpense(id){
   deleteExpenseFromStore(id);
+}
+
+function getShare(e, person){
+  if(e.splitType === 'custom' && e.splitAmounts){
+    return e.splitAmounts[person] || 0;
+  }
+  return e.amount / e.splitAmong.length;
 }
 
 function computeBalances(list){
@@ -685,10 +853,9 @@ function computeBalances(list){
   NAMES.forEach(a => { owes[a] = {}; NAMES.forEach(b => owes[a][b] = 0); });
 
   list.forEach(e => {
-    const share = e.amount / e.splitAmong.length;
     e.splitAmong.forEach(p => {
       if(p !== e.paidBy){
-        owes[p][e.paidBy] += share;
+        owes[p][e.paidBy] += getShare(e, p);
       }
     });
   });
@@ -709,7 +876,7 @@ function computeBalances(list){
     let paid = 0, share = 0;
     list.forEach(e => {
       if(e.paidBy === p) paid += e.amount;
-      if(e.splitAmong.includes(p)) share += e.amount / e.splitAmong.length;
+      if(e.splitAmong.includes(p)) share += getShare(e, p);
     });
     net[p] = paid - share;
   });
@@ -784,8 +951,14 @@ function renderHistory(){
   }
   const sorted = [...expenses].sort((a,b) => b.ts - a.ts);
   list.innerHTML = sorted.map(e => {
-    const share = e.amount / e.splitAmong.length;
     const c = e.currency || '£';
+    const isCustom = e.splitType === 'custom' && e.splitAmounts;
+    const splitLine = isCustom
+      ? e.splitAmong.map(n => `${n} ${fmt(getShare(e, n), c)}`).join(', ')
+      : e.splitAmong.join(', ');
+    const sideLabel = isCustom
+      ? `<span class="stub-each">custom split</span>`
+      : `<span class="stub-each">${fmt(e.amount / e.splitAmong.length, c)} each</span>`;
     return `
       <div class="stub">
         <button class="del-btn" onclick="deleteExpense('${e.id}')" aria-label="Delete">&#10005;</button>
@@ -793,11 +966,11 @@ function renderHistory(){
           <p class="stub-date">${fmtDate(e.ts)}</p>
           <p class="stub-desc">${escapeHtml(e.desc)}</p>
           <p class="stub-paidby">${e.paidBy} paid</p>
-          <p class="stub-splitline">Split: <span class="split-names">${e.splitAmong.join(', ')}</span></p>
+          <p class="stub-splitline">Split: <span class="split-names">${splitLine}</span></p>
         </div>
         <div class="stub-split">
           <span class="stub-amount">${fmt(e.amount, c)}</span>
-          <span class="stub-each">${fmt(share, c)} each</span>
+          ${sideLabel}
         </div>
       </div>
     `;
@@ -868,6 +1041,8 @@ document.getElementById('addBtn').addEventListener('click', addExpense);
 document.getElementById('clearBtn').addEventListener('click', () => {
   document.getElementById('desc').value = '';
   document.getElementById('amount').value = '';
+  customValues = {};
+  setSplitMode('even');
 });
 
 initTravelers();
