@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Trip Split</title>
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Trip Split">
+<meta name="theme-color" content="#4B3480">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+  :root{
+    --navy:#4B3480;
+    --navy-2:#5B4293;
+    --cream:#F7F2FC;
+    --cream-2:#EFE4F8;
+    --amber:#E8829E;
+    --amber-dark:#8C2F49;
+    --teal:#6E9BE0;
+    --teal-dark:#1F4C82;
+    --coral:#E8829E;
+    --coral-dark:#8C2F49;
+    --ink:#3A2E5C;
+    --muted:#7A7290;
+    --line:rgba(75,52,128,0.14);
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;}
+  .app{
+    font-family:'Inter',sans-serif;
+    background:var(--cream);
+    color:var(--ink);
+    min-height:100vh;
+    padding-bottom:3rem;
+  }
+  .header{
+    background:var(--navy);
+    color:var(--cream);
+    padding:1.75rem 1.5rem 2.25rem;
+    position:relative;
+    overflow:hidden;
+  }
+  .header::after{
+    content:"";
+    position:absolute;
+    left:0; right:0; bottom:0;
+    height:14px;
+    background-image:radial-gradient(circle, var(--cream) 4px, transparent 4.5px);
+    background-size:22px 14px;
+    background-position:8px 6px;
+    background-repeat:repeat-x;
+  }
+  .eyebrow{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--amber);
+    margin:0 0 6px;
+  }
+  .trip-title{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:700;
+    font-size:28px;
+    margin:0 0 14px;
+  }
+  .traveler-row{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+  }
+  .chip{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12.5px;
+    padding:5px 11px;
+    border-radius:999px;
+    background:rgba(246,241,228,0.1);
+    border:1px solid rgba(246,241,228,0.28);
+  }
+  .totals-strip{
+    display:flex;
+    gap:10px;
+    padding:14px 1.5rem 0;
+    margin-top:-1px;
+    overflow-x:auto;
+  }
+  .total-card{
+    flex:1;
+    min-width:110px;
+    background:#fff;
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:10px 12px;
+  }
+  .total-label{
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    color:var(--muted);
+    margin:0 0 3px;
+  }
+  .total-value{
+    font-family:'IBM Plex Mono',monospace;
+    font-weight:600;
+    font-size:17px;
+    margin:0;
+    color:var(--teal-dark);
+  }
+  .tabs{
+    display:flex;
+    gap:4px;
+    padding:1.25rem 1.5rem 0;
+  }
+  .tab-btn{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:500;
+    font-size:14px;
+    padding:9px 16px;
+    border:none;
+    background:transparent;
+    color:var(--muted);
+    cursor:pointer;
+    border-radius:8px 8px 0 0;
+    border-bottom:2px solid transparent;
+  }
+  .tab-btn.active{
+    color:var(--navy);
+    border-bottom:2px solid var(--amber);
+    background:var(--cream-2);
+  }
+  .panel{
+    padding:1.25rem 1.5rem 0;
+  }
+  .card{
+    background:#fff;
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:1.1rem 1.2rem;
+  }
+  .field{
+    margin-bottom:14px;
+  }
+  .field label{
+    display:block;
+    font-size:12.5px;
+    font-weight:500;
+    color:var(--muted);
+    margin-bottom:6px;
+  }
+  .field input[type="text"], .field input[type="number"], .field select{
+    width:100%;
+    padding:9px 11px;
+    font-size:14.5px;
+    font-family:'Inter',sans-serif;
+    border:1px solid var(--line);
+    border-radius:8px;
+    background:var(--cream);
+    color:var(--ink);
+  }
+  .field input:focus, .field select:focus{
+    outline:none;
+    border-color:var(--amber);
+  }
+  .amount-row{
+    display:flex;
+    gap:8px;
+  }
+  .amount-row select{
+    width:100px;
+    flex-shrink:0;
+    padding:9px 8px;
+    font-size:14px;
+    font-family:'Inter',sans-serif;
+    border:1px solid var(--line);
+    border-radius:8px;
+    background:var(--cream);
+    color:var(--ink);
+  }
+  .amount-row input{
+    flex:1;
+  }
+  .check-grid{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+  }
+  .check-pill{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    font-size:13.5px;
+    padding:7px 12px;
+    border-radius:999px;
+    border:1px solid var(--line);
+    background:var(--cream);
+    cursor:pointer;
+    user-select:none;
+  }
+  .check-pill.on{
+    background:var(--navy);
+    color:var(--cream);
+    border-color:var(--navy);
+  }
+  .check-pill input{display:none;}
+  .row-actions{
+    display:flex;
+    gap:8px;
+    margin-top:4px;
+  }
+  .btn{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:500;
+    font-size:14px;
+    padding:10px 18px;
+    border-radius:8px;
+    border:1px solid var(--teal-dark);
+    background:var(--teal);
+    color:#fff;
+    cursor:pointer;
+  }
+  .btn.secondary{
+    background:transparent;
+    color:var(--navy);
+  }
+  .btn.small{
+    padding:5px 10px;
+    font-size:12.5px;
+  }
+  .hint{
+    font-size:12px;
+    color:var(--muted);
+    margin-top:8px;
+  }
+  .stub{
+    position:relative;
+    display:flex;
+    background:#fff;
+    border:1px solid var(--line);
+    border-radius:10px;
+    margin-bottom:12px;
+    overflow:hidden;
+  }
+  .stub-main{
+    flex:1;
+    padding:12px 14px;
+  }
+  .stub-date{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    letter-spacing:0.05em;
+    text-transform:uppercase;
+    color:var(--muted);
+    margin:0 0 6px;
+  }
+  .stub-desc{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:700;
+    font-size:16px;
+    margin:0 0 6px;
+  }
+  .stub-paidby{
+    font-size:13px;
+    color:var(--ink);
+    margin:0 0 4px;
+  }
+  .stub-splitline{
+    font-size:13px;
+    color:var(--muted);
+    margin:0;
+  }
+  .split-names{
+    color:var(--amber-dark);
+    font-weight:500;
+  }
+  .stub-meta{
+    font-size:12.5px;
+    color:var(--muted);
+    margin:0;
+  }
+  .stub-split{
+    position:relative;
+    width:96px;
+    flex-shrink:0;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    background:var(--cream-2);
+    border-left:1px dashed var(--line);
+  }
+  .stub-split::before, .stub-split::after{
+    content:"";
+    position:absolute;
+    width:12px; height:12px;
+    background:var(--cream);
+    border-radius:50%;
+    left:-6px;
+  }
+  .stub-split::before{ top:-6px; }
+  .stub-split::after{ bottom:-6px; }
+  .stub-amount{
+    font-family:'IBM Plex Mono',monospace;
+    font-weight:600;
+    font-size:16px;
+    color:var(--teal-dark);
+  }
+  .stub-each{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    color:var(--muted);
+  }
+  .del-btn{
+    position:absolute;
+    top:6px;
+    right:8px;
+    background:none;
+    border:none;
+    color:var(--muted);
+    cursor:pointer;
+    font-size:13px;
+  }
+  .empty{
+    text-align:center;
+    padding:2.5rem 1rem;
+    color:var(--muted);
+  }
+  .board-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:12px 14px;
+    background:var(--navy);
+    color:var(--cream);
+    border-radius:8px;
+    margin-bottom:8px;
+    font-family:'IBM Plex Mono',monospace;
+  }
+  .board-row .arrow{
+    color:var(--amber);
+    margin:0 10px;
+  }
+  .board-amount{
+    font-weight:600;
+    font-size:15px;
+    color:var(--amber);
+  }
+  .settled-msg{
+    text-align:center;
+    padding:2rem 1rem;
+    color:var(--teal-dark);
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:500;
+  }
+  .balance-list{
+    margin-top:18px;
+  }
+  .balance-item{
+    display:flex;
+    justify-content:space-between;
+    padding:9px 0;
+    border-bottom:1px solid var(--line);
+    font-size:13.5px;
+  }
+  .balance-item:last-child{border-bottom:none;}
+  .balance-pos{color:var(--teal-dark); font-family:'IBM Plex Mono',monospace;}
+  .balance-neg{color:var(--coral-dark); font-family:'IBM Plex Mono',monospace;}
+  .section-label{
+    font-size:12px;
+    text-transform:uppercase;
+    letter-spacing:0.07em;
+    color:var(--muted);
+    margin:20px 0 10px;
+  }
+  .whoami{
+    margin:10px 0 0;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    color:var(--amber);
+  }
+  .whoami button{
+    background:none;
+    border:none;
+    color:var(--cream);
+    text-decoration:underline;
+    cursor:pointer;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    padding:0;
+    margin-left:8px;
+    opacity:0.75;
+  }
+  .profile-gate{
+    position:fixed;
+    inset:0;
+    background:rgba(28,43,69,0.55);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    z-index:50;
+    padding:1.5rem;
+  }
+  .profile-gate.show{ display:flex; }
+  .profile-card{
+    background:var(--cream);
+    border-radius:14px;
+    padding:1.75rem 1.5rem;
+    max-width:340px;
+    width:100%;
+    text-align:center;
+  }
+  .profile-title{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:700;
+    font-size:20px;
+    margin:0 0 6px;
+  }
+  .profile-sub{
+    font-size:13px;
+    color:var(--muted);
+    margin:0 0 18px;
+  }
+  .profile-grid{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+  }
+  .profile-option{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:500;
+    font-size:15px;
+    padding:11px;
+    border-radius:9px;
+    border:1px solid var(--line);
+    background:#fff;
+    cursor:pointer;
+  }
+  .profile-option:hover{
+    border-color:var(--amber);
+    background:var(--cream-2);
+  }
+  .toast{
+    position:fixed;
+    bottom:20px;
+    left:50%;
+    transform:translateX(-50%);
+    background:var(--navy);
+    color:var(--cream);
+    padding:9px 16px;
+    border-radius:8px;
+    font-size:13px;
+    opacity:0;
+    transition:opacity 0.25s;
+    pointer-events:none;
+  }
+  .toast.show{opacity:1;}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="header">
+    <p class="eyebrow">Trip ledger</p>
+    <h1 class="trip-title">London 2026</h1>
+    <div class="traveler-row" id="travelerRow"></div>
+    <p class="whoami" id="whoami"></p>
+  </div>
+
+  <div class="profile-gate" id="profileGate">
+    <div class="profile-card">
+      <p class="profile-title">Who are you?</p>
+      <p class="profile-sub">Pick your name so the app knows who's paying.</p>
+      <div class="profile-grid" id="profileGrid"></div>
+    </div>
+  </div>
+
+  <div class="totals-strip" id="totalsStrip"></div>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="add">Add expense</button>
+    <button class="tab-btn" data-tab="history">Ledger</button>
+    <button class="tab-btn" data-tab="settle">Settle up</button>
+  </div>
+
+  <div class="panel" id="panel-add">
+    <div class="card">
+      <div class="field">
+        <label for="desc">What was it</label>
+        <input type="text" id="desc" placeholder="Uber to the villa">
+      </div>
+      <div class="field">
+        <label for="amount">Total amount</label>
+        <div class="amount-row">
+          <select id="currency">
+            <option value="$">$ USD</option>
+            <option value="£" selected>£ GBP</option>
+            <option value="€">€ EUR</option>
+          </select>
+          <input type="number" id="amount" placeholder="60" step="0.01" min="0">
+        </div>
+      </div>
+      <div class="field">
+        <label for="paidBy">Who paid</label>
+        <select id="paidBy"></select>
+      </div>
+      <div class="field">
+        <label>Who it affects</label>
+        <div class="check-grid" id="affectsGrid"></div>
+      </div>
+      <div class="row-actions">
+        <button class="btn" id="addBtn">Add to ledger</button>
+        <button class="btn secondary" id="clearBtn">Clear</button>
+      </div>
+      <p class="hint">Splits evenly across whoever you select. Uncheck names for expenses that don't affect everyone.</p>
+    </div>
+  </div>
+
+  <div class="panel" id="panel-history" style="display:none;">
+    <div id="historyList"></div>
+  </div>
+
+  <div class="panel" id="panel-settle" style="display:none;">
+    <div id="settleList"></div>
+    <div class="balance-list" id="balanceList"></div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast">Saved</div>
+
+<script>
+const NAMES = ["Kayla","Marian","Eve","Elias","Delali"];
+const PROFILE_KEY = "my-profile";
+let expenses = [];
+let myName = null;
+
+// ---- Firebase setup ----
+// Paste your own project's config here (Firebase console > Project settings > Your apps > Config).
+// These values are safe to expose publicly — Firestore security rules control who can read/write.
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const expensesRef = db.collection("trips").doc("london-2026").collection("expenses");
+
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 1600);
+}
+
+function fmt(n, symbol){
+  symbol = symbol || '£';
+  return symbol + Number(n).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+function fmtDate(ts){
+  return new Date(ts).toLocaleDateString(undefined, {month:'short', day:'numeric'});
+}
+
+async function loadProfile(){
+  myName = localStorage.getItem(PROFILE_KEY);
+  const gate = document.getElementById('profileGate');
+  const whoami = document.getElementById('whoami');
+  if(!myName || !NAMES.includes(myName)){
+    gate.classList.add('show');
+    whoami.innerHTML = '';
+  } else {
+    gate.classList.remove('show');
+    whoami.innerHTML = `Signed in as ${myName} <button id="switchProfile">Switch</button>`;
+    document.getElementById('switchProfile').addEventListener('click', () => {
+      gate.classList.add('show');
+    });
+    const paidBy = document.getElementById('paidBy');
+    if(paidBy) paidBy.value = myName;
+  }
+}
+
+async function chooseProfile(name){
+  myName = name;
+  localStorage.setItem(PROFILE_KEY, name);
+  document.getElementById('profileGate').classList.remove('show');
+  const paidBy = document.getElementById('paidBy');
+  if(paidBy) paidBy.value = name;
+  const whoami = document.getElementById('whoami');
+  whoami.innerHTML = `Signed in as ${name} <button id="switchProfile">Switch</button>`;
+  document.getElementById('switchProfile').addEventListener('click', () => {
+    document.getElementById('profileGate').classList.add('show');
+  });
+}
+
+function initTravelers(){
+  const row = document.getElementById('travelerRow');
+  row.innerHTML = NAMES.map(n => `<span class="chip">${n}</span>`).join('');
+
+  const paidBy = document.getElementById('paidBy');
+  paidBy.innerHTML = NAMES.map(n => `<option value="${n}">${n}</option>`).join('');
+
+  const grid = document.getElementById('affectsGrid');
+  grid.innerHTML = NAMES.map(n => `
+    <label class="check-pill on" data-name="${n}">
+      <input type="checkbox" checked value="${n}"> ${n}
+    </label>
+  `).join('');
+  grid.querySelectorAll('.check-pill').forEach(pill => {
+    pill.addEventListener('click', (e) => {
+      e.preventDefault();
+      const cb = pill.querySelector('input');
+      cb.checked = !cb.checked;
+      pill.classList.toggle('on', cb.checked);
+    });
+  });
+
+  const profileGrid = document.getElementById('profileGrid');
+  profileGrid.innerHTML = NAMES.map(n => `<button class="profile-option" data-name="${n}">${n}</button>`).join('');
+  profileGrid.querySelectorAll('.profile-option').forEach(btn => {
+    btn.addEventListener('click', () => chooseProfile(btn.dataset.name));
+  });
+}
+
+function loadExpenses(){
+  expensesRef.onSnapshot((snapshot) => {
+    expenses = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    render();
+  }, (err) => {
+    toast('Could not connect — check your Firebase config');
+  });
+}
+
+function addExpenseToStore(expense){
+  return expensesRef.add(expense).catch(() => {
+    toast('Could not save — check your connection');
+  });
+}
+
+function deleteExpenseFromStore(id){
+  return expensesRef.doc(id).delete().catch(() => {
+    toast('Could not delete — try again');
+  });
+}
+
+function addExpense(){
+  const desc = document.getElementById('desc').value.trim();
+  const amount = parseFloat(document.getElementById('amount').value);
+  const currency = document.getElementById('currency').value;
+  const paidBy = document.getElementById('paidBy').value;
+  const checked = Array.from(document.querySelectorAll('#affectsGrid input:checked')).map(cb => cb.value);
+
+  if(!desc){ toast('Add a description'); return; }
+  if(!amount || amount <= 0){ toast('Add a valid amount'); return; }
+  if(checked.length === 0){ toast('Select who it affects'); return; }
+
+  addExpenseToStore({
+    desc, amount, currency, paidBy,
+    splitAmong: checked,
+    ts: Date.now()
+  });
+
+  document.getElementById('desc').value = '';
+  document.getElementById('amount').value = '';
+  if(myName) document.getElementById('paidBy').value = myName;
+  toast('Added to ledger');
+}
+
+function deleteExpense(id){
+  deleteExpenseFromStore(id);
+}
+
+function computeBalances(list){
+  list = list || expenses;
+  // owes[a][b] = amount a owes b
+  const owes = {};
+  NAMES.forEach(a => { owes[a] = {}; NAMES.forEach(b => owes[a][b] = 0); });
+
+  list.forEach(e => {
+    const share = e.amount / e.splitAmong.length;
+    e.splitAmong.forEach(p => {
+      if(p !== e.paidBy){
+        owes[p][e.paidBy] += share;
+      }
+    });
+  });
+
+  // net out pairwise (A owes B and B owes A simultaneously)
+  NAMES.forEach(a => {
+    NAMES.forEach(b => {
+      if(a < b){
+        const diff = owes[a][b] - owes[b][a];
+        if(diff > 0){ owes[a][b] = diff; owes[b][a] = 0; }
+        else { owes[b][a] = -diff; owes[a][b] = 0; }
+      }
+    });
+  });
+
+  const net = {};
+  NAMES.forEach(p => {
+    let paid = 0, share = 0;
+    list.forEach(e => {
+      if(e.paidBy === p) paid += e.amount;
+      if(e.splitAmong.includes(p)) share += e.amount / e.splitAmong.length;
+    });
+    net[p] = paid - share;
+  });
+
+  return { owes, net };
+}
+
+function simplifyDebts(net){
+  const creditors = [];
+  const debtors = [];
+  Object.entries(net).forEach(([p, v]) => {
+    if(v > 0.005) creditors.push({p, v});
+    else if(v < -0.005) debtors.push({p, v: -v});
+  });
+  creditors.sort((a,b) => b.v - a.v);
+  debtors.sort((a,b) => b.v - a.v);
+
+  const transactions = [];
+  let ci = 0, di = 0;
+  while(ci < creditors.length && di < debtors.length){
+    const c = creditors[ci], d = debtors[di];
+    const amt = Math.min(c.v, d.v);
+    if(amt > 0.005){
+      transactions.push({ from: d.p, to: c.p, amount: amt });
+    }
+    c.v -= amt; d.v -= amt;
+    if(c.v <= 0.005) ci++;
+    if(d.v <= 0.005) di++;
+  }
+  return transactions;
+}
+
+function render(){
+  renderTotals();
+  renderHistory();
+  renderSettle();
+}
+
+function renderTotals(){
+  const byCurrency = {};
+  expenses.forEach(e => {
+    const c = e.currency || '£';
+    byCurrency[c] = (byCurrency[c] || 0) + e.amount;
+  });
+  const strip = document.getElementById('totalsStrip');
+  const totalCards = Object.keys(byCurrency).length
+    ? Object.entries(byCurrency).map(([c, total]) => `
+        <div class="total-card">
+          <p class="total-label">Total spent</p>
+          <p class="total-value">${fmt(total, c)}</p>
+        </div>
+      `).join('')
+    : `
+        <div class="total-card">
+          <p class="total-label">Total spent</p>
+          <p class="total-value">${fmt(0)}</p>
+        </div>
+      `;
+  strip.innerHTML = totalCards + `
+    <div class="total-card">
+      <p class="total-label">Expenses</p>
+      <p class="total-value">${expenses.length}</p>
+    </div>
+  `;
+}
+
+function renderHistory(){
+  const list = document.getElementById('historyList');
+  if(expenses.length === 0){
+    list.innerHTML = `<div class="empty">No expenses logged yet. Add your first one from the Add expense tab.</div>`;
+    return;
+  }
+  const sorted = [...expenses].sort((a,b) => b.ts - a.ts);
+  list.innerHTML = sorted.map(e => {
+    const share = e.amount / e.splitAmong.length;
+    const c = e.currency || '£';
+    return `
+      <div class="stub">
+        <button class="del-btn" onclick="deleteExpense('${e.id}')" aria-label="Delete">&#10005;</button>
+        <div class="stub-main">
+          <p class="stub-date">${fmtDate(e.ts)}</p>
+          <p class="stub-desc">${escapeHtml(e.desc)}</p>
+          <p class="stub-paidby">${e.paidBy} paid</p>
+          <p class="stub-splitline">Split: <span class="split-names">${e.splitAmong.join(', ')}</span></p>
+        </div>
+        <div class="stub-split">
+          <span class="stub-amount">${fmt(e.amount, c)}</span>
+          <span class="stub-each">${fmt(share, c)} each</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderSettle(){
+  const settleList = document.getElementById('settleList');
+  const balanceList = document.getElementById('balanceList');
+
+  if(expenses.length === 0){
+    settleList.innerHTML = `<div class="empty">Nothing to settle yet.</div>`;
+    balanceList.innerHTML = '';
+    return;
+  }
+
+  const currencies = [...new Set(expenses.map(e => e.currency || '£'))];
+
+  settleList.innerHTML = currencies.map(c => {
+    const list = expenses.filter(e => (e.currency || '£') === c);
+    const { net } = computeBalances(list);
+    const txs = simplifyDebts(net);
+    const heading = currencies.length > 1 ? `<p class="section-label">${c} balances</p>` : '';
+    const body = txs.length === 0
+      ? `<div class="settled-msg">Everyone's square${currencies.length > 1 ? ' in ' + c : ''}.</div>`
+      : txs.map(t => `
+          <div class="board-row">
+            <span>${t.from}</span>
+            <span class="arrow">&#8594;</span>
+            <span>${t.to}</span>
+            <span class="board-amount">${fmt(t.amount, c)}</span>
+          </div>
+        `).join('');
+    return heading + body;
+  }).join('');
+
+  balanceList.innerHTML = currencies.map(c => {
+    const list = expenses.filter(e => (e.currency || '£') === c);
+    const { net } = computeBalances(list);
+    const heading = currencies.length > 1 ? `<p class="section-label">Net position (${c})</p>` : `<p class="section-label">Net position</p>`;
+    const rows = NAMES.map(p => {
+      const v = net[p];
+      const cls = v >= 0 ? 'balance-pos' : 'balance-neg';
+      const label = v >= 0 ? `is owed ${fmt(v, c)}` : `owes ${fmt(-v, c)}`;
+      return `<div class="balance-item"><span>${p}</span><span class="${cls}">${label}</span></div>`;
+    }).join('');
+    return heading + rows;
+  }).join('');
+}
+
+function escapeHtml(str){
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    ['add','history','settle'].forEach(t => {
+      document.getElementById('panel-' + t).style.display = (t === btn.dataset.tab) ? 'block' : 'none';
+    });
+  });
+});
+
+document.getElementById('addBtn').addEventListener('click', addExpense);
+document.getElementById('clearBtn').addEventListener('click', () => {
+  document.getElementById('desc').value = '';
+  document.getElementById('amount').value = '';
+});
+
+initTravelers();
+loadExpenses();
+loadProfile();
+</script>
+</body>
+</html>
