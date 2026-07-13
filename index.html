@@ -396,6 +396,8 @@
     border-radius:8px;
     margin-bottom:8px;
     font-family:'IBM Plex Mono',monospace;
+    flex-wrap:wrap;
+    gap:8px;
   }
   .board-row .arrow{
     color:var(--amber);
@@ -405,6 +407,38 @@
     font-weight:600;
     font-size:15px;
     color:var(--amber);
+    margin-right:auto;
+  }
+  .pay-btn{
+    font-family:'Inter',sans-serif;
+    font-size:12px;
+    font-weight:500;
+    padding:6px 12px;
+    border-radius:999px;
+    border:none;
+    background:var(--teal);
+    color:#fff;
+    cursor:pointer;
+  }
+  .settled-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:9px 12px;
+    background:var(--cream-2);
+    border-radius:8px;
+    margin-bottom:6px;
+    font-size:13px;
+    color:var(--muted);
+  }
+  .undo-btn{
+    font-family:'Inter',sans-serif;
+    font-size:11.5px;
+    background:none;
+    border:none;
+    color:var(--coral-dark);
+    text-decoration:underline;
+    cursor:pointer;
   }
   .settled-msg{
     text-align:center;
@@ -601,6 +635,7 @@
 const NAMES = ["Kayla","Marian","Eve","Elias","Delali"];
 const PROFILE_KEY = "my-profile";
 let expenses = [];
+let settlements = [];
 let myName = null;
 let splitMode = 'even';
 let customValues = {};
@@ -626,6 +661,33 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 db.settings({ experimentalAutoDetectLongPolling: true, merge: true });
 const expensesRef = db.collection("trips").doc("london-2026").collection("expenses");
+const settlementsRef = db.collection("trips").doc("london-2026").collection("settlements");
+
+// Approximate fallback rates (units of currency per 1 USD) in case the live lookup fails
+let exchangeRates = { '$': 1, '£': 0.79, '€': 0.92 };
+const CURRENCY_CODES = { '$': 'USD', '£': 'GBP', '€': 'EUR' };
+
+async function fetchExchangeRates(){
+  try{
+    const res = await fetch('https://open.er-api.com/v6/latest/USD');
+    const data = await res.json();
+    if(data && data.rates){
+      exchangeRates = {
+        '$': 1,
+        '£': data.rates.GBP || exchangeRates['£'],
+        '€': data.rates.EUR || exchangeRates['€']
+      };
+      render();
+    }
+  }catch(e){
+    // keep fallback rates
+  }
+}
+
+function toUSD(amount, currency){
+  const rate = exchangeRates[currency] || 1;
+  return amount / rate;
+}
 
 function toast(msg){
   const t = document.getElementById('toast');
@@ -777,6 +839,24 @@ function loadExpenses(){
   }, (err) => {
     toast('Could not connect — check your Firebase config');
   });
+  settlementsRef.onSnapshot((snapshot) => {
+    settlements = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    render();
+  }, (err) => {
+    toast('Could not load payment history');
+  });
+}
+
+function markSettled(from, to, amountUSD){
+  settlementsRef.add({ from, to, amount: amountUSD, ts: Date.now() }).catch(() => {
+    toast('Could not record payment — try again');
+  });
+}
+
+function undoSettlement(id){
+  settlementsRef.doc(id).delete().catch(() => {
+    toast('Could not undo — try again');
+  });
 }
 
 function addExpenseToStore(expense){
@@ -848,40 +928,24 @@ function getShare(e, person){
 
 function computeBalances(list){
   list = list || expenses;
-  // owes[a][b] = amount a owes b
-  const owes = {};
-  NAMES.forEach(a => { owes[a] = {}; NAMES.forEach(b => owes[a][b] = 0); });
-
-  list.forEach(e => {
-    e.splitAmong.forEach(p => {
-      if(p !== e.paidBy){
-        owes[p][e.paidBy] += getShare(e, p);
-      }
-    });
-  });
-
-  // net out pairwise (A owes B and B owes A simultaneously)
-  NAMES.forEach(a => {
-    NAMES.forEach(b => {
-      if(a < b){
-        const diff = owes[a][b] - owes[b][a];
-        if(diff > 0){ owes[a][b] = diff; owes[b][a] = 0; }
-        else { owes[b][a] = -diff; owes[a][b] = 0; }
-      }
-    });
-  });
-
   const net = {};
   NAMES.forEach(p => {
     let paid = 0, share = 0;
     list.forEach(e => {
-      if(e.paidBy === p) paid += e.amount;
-      if(e.splitAmong.includes(p)) share += getShare(e, p);
+      const c = e.currency || '£';
+      if(e.paidBy === p) paid += toUSD(e.amount, c);
+      if(e.splitAmong.includes(p)) share += toUSD(getShare(e, p), c);
     });
     net[p] = paid - share;
   });
 
-  return { owes, net };
+  // apply recorded settlements: payer's net goes up (less owed), receiver's net goes down (already paid in cash)
+  settlements.forEach(s => {
+    if(net[s.from] !== undefined) net[s.from] += s.amount;
+    if(net[s.to] !== undefined) net[s.to] -= s.amount;
+  });
+
+  return { net };
 }
 
 function simplifyDebts(net){
@@ -916,26 +980,13 @@ function render(){
 }
 
 function renderTotals(){
-  const byCurrency = {};
-  expenses.forEach(e => {
-    const c = e.currency || '£';
-    byCurrency[c] = (byCurrency[c] || 0) + e.amount;
-  });
+  const totalUSD = expenses.reduce((sum, e) => sum + toUSD(e.amount, e.currency || '£'), 0);
   const strip = document.getElementById('totalsStrip');
-  const totalCards = Object.keys(byCurrency).length
-    ? Object.entries(byCurrency).map(([c, total]) => `
-        <div class="total-card">
-          <p class="total-label">Total spent</p>
-          <p class="total-value">${fmt(total, c)}</p>
-        </div>
-      `).join('')
-    : `
-        <div class="total-card">
-          <p class="total-label">Total spent</p>
-          <p class="total-value">${fmt(0)}</p>
-        </div>
-      `;
-  strip.innerHTML = totalCards + `
+  strip.innerHTML = `
+    <div class="total-card">
+      <p class="total-label">Total spent</p>
+      <p class="total-value">${fmt(totalUSD, '$')}</p>
+    </div>
     <div class="total-card">
       <p class="total-label">Expenses</p>
       <p class="total-value">${expenses.length}</p>
@@ -987,37 +1038,39 @@ function renderSettle(){
     return;
   }
 
-  const currencies = [...new Set(expenses.map(e => e.currency || '£'))];
+  const { net } = computeBalances(expenses);
+  const txs = simplifyDebts(net);
 
-  settleList.innerHTML = currencies.map(c => {
-    const list = expenses.filter(e => (e.currency || '£') === c);
-    const { net } = computeBalances(list);
-    const txs = simplifyDebts(net);
-    const heading = currencies.length > 1 ? `<p class="section-label">${c} balances</p>` : '';
-    const body = txs.length === 0
-      ? `<div class="settled-msg">Everyone's square${currencies.length > 1 ? ' in ' + c : ''}.</div>`
-      : txs.map(t => `
+  settleList.innerHTML = `<p class="section-label">Settle up (converted to USD)</p>` + (
+    txs.length === 0
+      ? `<div class="settled-msg">Everyone's square.</div>`
+      : txs.map((t, i) => `
           <div class="board-row">
             <span>${t.from}</span>
             <span class="arrow">&#8594;</span>
             <span>${t.to}</span>
-            <span class="board-amount">${fmt(t.amount, c)}</span>
+            <span class="board-amount">${fmt(t.amount, '$')}</span>
+            <button class="pay-btn" onclick="markSettled('${t.from}','${t.to}',${t.amount.toFixed(2)})">Mark as paid</button>
           </div>
-        `).join('');
-    return heading + body;
-  }).join('');
+        `).join('')
+  );
 
-  balanceList.innerHTML = currencies.map(c => {
-    const list = expenses.filter(e => (e.currency || '£') === c);
-    const { net } = computeBalances(list);
-    const heading = currencies.length > 1 ? `<p class="section-label">Net position (${c})</p>` : `<p class="section-label">Net position</p>`;
-    const rows = NAMES.map(p => {
-      const v = net[p];
-      const cls = v >= 0 ? 'balance-pos' : 'balance-neg';
-      const label = v >= 0 ? `is owed ${fmt(v, c)}` : `owes ${fmt(-v, c)}`;
-      return `<div class="balance-item"><span>${p}</span><span class="${cls}">${label}</span></div>`;
-    }).join('');
-    return heading + rows;
+  if(settlements.length > 0){
+    settleList.innerHTML += `<p class="section-label">Payment history</p>` + settlements
+      .slice().sort((a,b) => b.ts - a.ts)
+      .map(s => `
+        <div class="settled-row">
+          <span>${s.from} paid ${s.to} ${fmt(s.amount, '$')}</span>
+          <button class="undo-btn" onclick="undoSettlement('${s.id}')">Undo</button>
+        </div>
+      `).join('');
+  }
+
+  balanceList.innerHTML = `<p class="section-label">Net position (USD)</p>` + NAMES.map(p => {
+    const v = net[p];
+    const cls = v >= 0 ? 'balance-pos' : 'balance-neg';
+    const label = v >= 0 ? `is owed ${fmt(v, '$')}` : `owes ${fmt(-v, '$')}`;
+    return `<div class="balance-item"><span>${p}</span><span class="${cls}">${label}</span></div>`;
   }).join('');
 }
 
@@ -1048,6 +1101,7 @@ document.getElementById('clearBtn').addEventListener('click', () => {
 initTravelers();
 loadExpenses();
 loadProfile();
+fetchExchangeRates();
 </script>
 </body>
 </html>
