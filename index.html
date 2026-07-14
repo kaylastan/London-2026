@@ -1172,6 +1172,23 @@ function renderSettle(){
     }).join('');
   }
 
+  const paidItems = items.filter(it => settledIds.has(it.itemId));
+  if(paidItems.length > 0){
+    settleList.innerHTML += `<p class="section-label">Payment history</p>` + paidItems
+      .slice()
+      .sort((a,b) => {
+        const sa = settlements.find(s => s.id === a.itemId);
+        const sb = settlements.find(s => s.id === b.itemId);
+        return (sb ? sb.ts : 0) - (sa ? sa.ts : 0);
+      })
+      .map(it => `
+        <div class="settled-row">
+          <span>${it.from} paid ${it.to} ${fmt(it.amount, '$')} — ${escapeHtml(it.desc)}</span>
+          <button class="undo-btn" onclick="undoItemPaid('${it.itemId}')">Undo</button>
+        </div>
+      `).join('');
+  }
+
   balanceList.innerHTML = `<p class="section-label">Net position (USD)</p>` + NAMES.map(p => {
     const v = net[p];
     const cls = v >= 0 ? 'balance-pos' : 'balance-neg';
