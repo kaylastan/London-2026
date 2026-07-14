@@ -1154,3 +1154,60 @@ function renderSettle(){
               ? `<button class="undo-btn" onclick="undoItemPaid('${it.itemId}')">Undo</button>`
               : `<button class="pay-btn small" onclick="markItemPaid('${it.itemId}','${it.from}','${it.to}',${it.amount.toFixed(2)})">Mark as paid</button>`
             }
+          </div>
+        `;
+      }).join('');
+      return `
+        <details class="debt-group">
+          <summary class="debt-group-summary">
+            <span>${g.from}</span>
+            <span class="arrow">&#8594;</span>
+            <span>${g.to}</span>
+            <span class="board-amount">${fmt(activeTotal, '$')}</span>
+            <button class="pay-btn" onclick="markGroupPaid(event, '${g.from}', '${g.to}')">Mark all as paid</button>
+          </summary>
+          <div class="debt-group-items">${itemsHtml}</div>
+        </details>
+      `;
+    }).join('');
+  }
+
+  balanceList.innerHTML = `<p class="section-label">Net position (USD)</p>` + NAMES.map(p => {
+    const v = net[p];
+    const cls = v >= 0 ? 'balance-pos' : 'balance-neg';
+    const label = v >= 0 ? `is owed ${fmt(v, '$')}` : `owes ${fmt(-v, '$')}`;
+    return `<div class="balance-item"><span>${p}</span><span class="${cls}">${label}</span></div>`;
+  }).join('');
+}
+
+function escapeHtml(str){
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    ['add','history','settle'].forEach(t => {
+      document.getElementById('panel-' + t).style.display = (t === btn.dataset.tab) ? 'block' : 'none';
+    });
+  });
+});
+
+document.getElementById('addBtn').addEventListener('click', addExpense);
+document.getElementById('clearBtn').addEventListener('click', () => {
+  document.getElementById('desc').value = '';
+  document.getElementById('amount').value = '';
+  customValues = {};
+  setSplitMode('even');
+});
+
+initTravelers();
+loadExpenses();
+loadProfile();
+fetchExchangeRates();
+</script>
+</body>
+</html>
