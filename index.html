@@ -431,6 +431,71 @@
     font-size:13px;
     color:var(--muted);
   }
+  .debt-group{
+    background:var(--navy);
+    border-radius:8px;
+    margin-bottom:8px;
+    overflow:hidden;
+  }
+  .debt-group-summary{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:8px;
+    padding:12px 14px;
+    color:var(--cream);
+    font-family:'IBM Plex Mono',monospace;
+    cursor:pointer;
+    list-style:none;
+  }
+  .debt-group-summary::-webkit-details-marker{ display:none; }
+  .debt-group-summary .board-amount{
+    margin-left:auto;
+  }
+  .debt-group-items{
+    background:var(--cream-2);
+    padding:6px 14px;
+  }
+  .debt-item{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    padding:9px 0;
+    border-bottom:1px solid var(--line);
+  }
+  .debt-item:last-child{ border-bottom:none; }
+  .debt-item.paid{
+    opacity:0.55;
+  }
+  .debt-item.paid .debt-item-desc, .debt-item.paid .debt-item-amount{
+    text-decoration:line-through;
+  }
+  .debt-item-info{
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+  }
+  .debt-item-desc{
+    font-size:13.5px;
+    color:var(--ink);
+  }
+  .debt-item-date{
+    font-size:11px;
+    font-family:'IBM Plex Mono',monospace;
+    color:var(--muted);
+  }
+  .debt-item-amount{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:13px;
+    color:var(--teal-dark);
+    margin-left:auto;
+  }
+  .pay-btn.small{
+    font-size:11px;
+    padding:5px 10px;
+  }
   .undo-btn{
     font-family:'Inter',sans-serif;
     font-size:11.5px;
@@ -847,15 +912,30 @@ function loadExpenses(){
   });
 }
 
-function markSettled(from, to, amountUSD){
-  settlementsRef.add({ from, to, amount: amountUSD, ts: Date.now() }).catch(() => {
+function markItemPaid(itemId, from, to, amountUSD){
+  settlementsRef.doc(itemId).set({ from, to, amount: amountUSD, ts: Date.now() }).catch(() => {
     toast('Could not record payment — try again');
   });
 }
 
-function undoSettlement(id){
-  settlementsRef.doc(id).delete().catch(() => {
+function undoItemPaid(itemId){
+  settlementsRef.doc(itemId).delete().catch(() => {
     toast('Could not undo — try again');
+  });
+}
+
+function markGroupPaid(event, from, to){
+  event.preventDefault();
+  event.stopPropagation();
+  const settledIds = new Set(settlements.map(s => s.id));
+  const unpaid = buildDebtItems(expenses).filter(it => it.from === from && it.to === to && !settledIds.has(it.itemId));
+  if(unpaid.length === 0) return;
+  const batch = db.batch();
+  unpaid.forEach(it => {
+    batch.set(settlementsRef.doc(it.itemId), { from: it.from, to: it.to, amount: it.amount, ts: Date.now() });
+  });
+  batch.commit().catch(() => {
+    toast('Could not record payments — try again');
   });
 }
 
@@ -948,29 +1028,28 @@ function computeBalances(list){
   return { net };
 }
 
-function simplifyDebts(net){
-  const creditors = [];
-  const debtors = [];
-  Object.entries(net).forEach(([p, v]) => {
-    if(v > 0.005) creditors.push({p, v});
-    else if(v < -0.005) debtors.push({p, v: -v});
+// Every individual debt, traced back to the specific expense it came from.
+// Nothing here is netted across the group — if Kayla paid for Marian twice,
+// both of those show up as their own line items under Marian -> Kayla.
+function buildDebtItems(list){
+  list = list || expenses;
+  const items = [];
+  list.forEach(e => {
+    const c = e.currency || '£';
+    e.splitAmong.forEach(p => {
+      if(p !== e.paidBy){
+        items.push({
+          itemId: e.id + '__' + p,
+          desc: e.desc,
+          from: p,
+          to: e.paidBy,
+          amount: toUSD(getShare(e, p), c),
+          ts: e.ts
+        });
+      }
+    });
   });
-  creditors.sort((a,b) => b.v - a.v);
-  debtors.sort((a,b) => b.v - a.v);
-
-  const transactions = [];
-  let ci = 0, di = 0;
-  while(ci < creditors.length && di < debtors.length){
-    const c = creditors[ci], d = debtors[di];
-    const amt = Math.min(c.v, d.v);
-    if(amt > 0.005){
-      transactions.push({ from: d.p, to: c.p, amount: amt });
-    }
-    c.v -= amt; d.v -= amt;
-    if(c.v <= 0.005) ci++;
-    if(d.v <= 0.005) di++;
-  }
-  return transactions;
+  return items;
 }
 
 function render(){
@@ -1039,69 +1118,39 @@ function renderSettle(){
   }
 
   const { net } = computeBalances(expenses);
-  const txs = simplifyDebts(net);
+  const items = buildDebtItems(expenses);
+  const settledIds = new Set(settlements.map(s => s.id));
 
-  settleList.innerHTML = `<p class="section-label">Settle up (converted to USD)</p>` + (
-    txs.length === 0
-      ? `<div class="settled-msg">Everyone's square.</div>`
-      : txs.map((t, i) => `
-          <div class="board-row">
-            <span>${t.from}</span>
-            <span class="arrow">&#8594;</span>
-            <span>${t.to}</span>
-            <span class="board-amount">${fmt(t.amount, '$')}</span>
-            <button class="pay-btn" onclick="markSettled('${t.from}','${t.to}',${t.amount.toFixed(2)})">Mark as paid</button>
-          </div>
-        `).join('')
-  );
-
-  if(settlements.length > 0){
-    settleList.innerHTML += `<p class="section-label">Payment history</p>` + settlements
-      .slice().sort((a,b) => b.ts - a.ts)
-      .map(s => `
-        <div class="settled-row">
-          <span>${s.from} paid ${s.to} ${fmt(s.amount, '$')}</span>
-          <button class="undo-btn" onclick="undoSettlement('${s.id}')">Undo</button>
-        </div>
-      `).join('');
-  }
-
-  balanceList.innerHTML = `<p class="section-label">Net position (USD)</p>` + NAMES.map(p => {
-    const v = net[p];
-    const cls = v >= 0 ? 'balance-pos' : 'balance-neg';
-    const label = v >= 0 ? `is owed ${fmt(v, '$')}` : `owes ${fmt(-v, '$')}`;
-    return `<div class="balance-item"><span>${p}</span><span class="${cls}">${label}</span></div>`;
-  }).join('');
-}
-
-function escapeHtml(str){
-  const d = document.createElement('div');
-  d.textContent = str;
-  return d.innerHTML;
-}
-
-document.querySelectorAll('.tab-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    ['add','history','settle'].forEach(t => {
-      document.getElementById('panel-' + t).style.display = (t === btn.dataset.tab) ? 'block' : 'none';
-    });
+  const groups = {};
+  items.forEach(it => {
+    const key = it.from + '||' + it.to;
+    if(!groups[key]) groups[key] = { from: it.from, to: it.to, items: [] };
+    groups[key].items.push(it);
   });
-});
 
-document.getElementById('addBtn').addEventListener('click', addExpense);
-document.getElementById('clearBtn').addEventListener('click', () => {
-  document.getElementById('desc').value = '';
-  document.getElementById('amount').value = '';
-  customValues = {};
-  setSplitMode('even');
-});
+  const groupKeys = Object.keys(groups).filter(key => {
+    const activeTotal = groups[key].items.reduce((s, it) => s + (settledIds.has(it.itemId) ? 0 : it.amount), 0);
+    return activeTotal > 0.005;
+  });
 
-initTravelers();
-loadExpenses();
-loadProfile();
-fetchExchangeRates();
-</script>
-</body>
-</html>
+  settleList.innerHTML = `<p class="section-label">Settle up (converted to USD)</p>`;
+
+  if(groupKeys.length === 0){
+    settleList.innerHTML += `<div class="settled-msg">Everyone's square.</div>`;
+  } else {
+    settleList.innerHTML += groupKeys.map(key => {
+      const g = groups[key];
+      const activeTotal = g.items.reduce((s, it) => s + (settledIds.has(it.itemId) ? 0 : it.amount), 0);
+      const itemsHtml = g.items.slice().sort((a,b) => b.ts - a.ts).map(it => {
+        const paid = settledIds.has(it.itemId);
+        return `
+          <div class="debt-item${paid ? ' paid' : ''}">
+            <div class="debt-item-info">
+              <span class="debt-item-desc">${escapeHtml(it.desc)}</span>
+              <span class="debt-item-date">${fmtDate(it.ts)}</span>
+            </div>
+            <span class="debt-item-amount">${fmt(it.amount, '$')}</span>
+            ${paid
+              ? `<button class="undo-btn" onclick="undoItemPaid('${it.itemId}')">Undo</button>`
+              : `<button class="pay-btn small" onclick="markItemPaid('${it.itemId}','${it.from}','${it.to}',${it.amount.toFixed(2)})">Mark as paid</button>`
+            }
